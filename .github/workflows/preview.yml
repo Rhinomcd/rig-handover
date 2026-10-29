@@ -1,0 +1,53 @@
+name: preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      night:
+        description: Night to preview
+        default: '2026-10-28'
+      marker:
+        description: Put the LANE_MARKER secret in the banner; off for the clean-up upload (ADR 0003)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency: preview
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Save the page with rig
+        env:
+          LANE_ID: lane-07
+          LANE_MARKER: ${{ inputs.marker && secrets.LANE_MARKER || '' }}
+          NIGHT: ${{ inputs.night }}
+        run: |
+          pnpm start & pid=$!
+          for _ in $(seq 30); do curl -sf localhost:8787/health >/dev/null && break; sleep 1; done
+          mkdir -p site/digest
+          curl -sf "localhost:8787/digest/$NIGHT" -o "site/digest/$NIGHT.html"
+          kill $pid
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+          retention-days: 1
+      - id: deploy
+        uses: actions/deploy-pages@v4
